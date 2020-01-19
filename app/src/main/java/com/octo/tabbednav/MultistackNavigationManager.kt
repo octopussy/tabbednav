@@ -16,7 +16,6 @@ import java.util.*
 typealias FragmentBuilder = () -> Fragment
 
 class NavigationManager(
-  val context: Context,
   @IdRes val containerViewId: Int,
   private val fragmentManager: FragmentManager
 ) {
