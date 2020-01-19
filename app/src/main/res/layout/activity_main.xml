@@ -16,18 +16,21 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
         <Button
+            android:onClick="selectMain"
             android:id="@+id/tabMain"
             android:text="Main"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"/>
 
         <Button
+            android:onClick="selectFavorites"
             android:id="@+id/tabFavorites"
             android:text="Favorites"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"/>
 
         <Button
+            android:onClick="selectBasket"
             android:id="@+id/tabCart"
             android:text="Cart"
             android:layout_width="wrap_content"
