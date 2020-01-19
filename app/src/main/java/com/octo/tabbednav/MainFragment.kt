@@ -4,7 +4,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
+import android.widget.Button
 import androidx.fragment.app.Fragment
 
 class MainFragment: Fragment() {
@@ -13,9 +13,13 @@ class MainFragment: Fragment() {
     container: ViewGroup?,
     savedInstanceState: Bundle?
   ): View? {
-    val v = TextView(context).apply {
-      text = "main"
+    return inflater.inflate(R.layout.fragment_main, container, false)
+  }
+
+  override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+    super.onViewCreated(view, savedInstanceState)
+    view.findViewById<Button>(R.id.btnCatalog).setOnClickListener {
+      MainActivity.NAV.pushFragment(CatalogFragment())
     }
-    return v
   }
 }

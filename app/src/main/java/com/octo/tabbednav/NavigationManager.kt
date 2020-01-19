@@ -23,6 +23,7 @@ class NavigationManager(
 
   private val stacks = mutableMapOf<String, Stack>()
   private lateinit var selectedStackName: String
+  private lateinit var firstStackName: String
 
   private var initialized = false
 
@@ -34,17 +35,19 @@ class NavigationManager(
     if (initialized) {
       throw IllegalStateException("Already initialized.")
     }
+
+    firstStackName = entries.first().name
+
     if (savedInstanceState == null) {
       entries.forEach { addStack(it) }
       initialized = true
-      select(entries.first().name)
+      select(firstStackName)
     } else {
       entries.forEach { restoreStack(it) }
       initialized = true
-      val s = savedInstanceState.getString("selected") ?: entries.first().name
+      val s = savedInstanceState.getString("selected") ?: firstStackName
       select(s)
     }
-
   }
 
   fun select(name: String) {
@@ -52,8 +55,6 @@ class NavigationManager(
     if (!stacks.containsKey(name)) {
       throw RuntimeException("Stack '$name' not found.")
     }
-
-    val s = stacks[name]
 
     val tr = fragmentManager.beginTransaction()
 
@@ -76,12 +77,25 @@ class NavigationManager(
     outState.putString("selected", selectedStackName)
   }
 
-  private fun checkInit() {
-    if(!initialized) throw IllegalStateException("Not initialized.")
+  fun pushFragment(fragment: Fragment, addToBackStack: Boolean = true) {
+    getSelectedStack().pushFragment(fragment, addToBackStack)
   }
 
   fun popBack(): Boolean {
-    return false
+    var handled = getSelectedStack().popBack()
+    if (!handled && selectedStackName != firstStackName) {
+      select(firstStackName)
+      handled = true
+    }
+    return handled
+  }
+
+  private fun checkInit() {
+    if (!initialized) throw IllegalStateException("Not initialized.")
+  }
+
+  private fun getSelectedStack(): Stack {
+    return stacks[selectedStackName] ?: throw IllegalStateException()
   }
 
   private fun addStack(entry: BuilderEntry) {
@@ -90,16 +104,20 @@ class NavigationManager(
       .add(containerViewId, containerFragment, entry.name)
       .commitNow()
 
-    stacks[entry.name] = Stack(containerFragment.childFragmentManager,
-      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder)
+    stacks[entry.name] = Stack(
+      containerFragment.childFragmentManager,
+      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder
+    )
   }
 
   private fun restoreStack(entry: BuilderEntry) {
     val containerFragment = fragmentManager.findFragmentByTag(entry.name)
       ?: throw IllegalStateException("Cannot restore fragment for '${entry.name}")
 
-    stacks[entry.name] = Stack(containerFragment.childFragmentManager,
-      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder)
+    stacks[entry.name] = Stack(
+      containerFragment.childFragmentManager,
+      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder
+    )
   }
 
   class Stack(
@@ -108,11 +126,35 @@ class NavigationManager(
     val containerFragmentTag: String,
     val topFragmentBuilder: FragmentBuilder
   ) {
+
     init {
-      val topFragment = topFragmentBuilder()
-      fragmentManager.beginTransaction()
-        .add(containerViewId, topFragment)
-        .commitNow()
+      pushFragment(topFragmentBuilder(), false)
+    }
+
+    fun pushFragment(fragment: Fragment, addToBackStack: Boolean) {
+      val visibleFragments = fragmentManager.fragments.filter { it.isVisible }
+      if (visibleFragments.size > 1) {
+        throw IllegalStateException("More than 1 visible fragments in '$containerFragmentTag'")
+      }
+      val tr = fragmentManager.beginTransaction()
+      if (visibleFragments.isNotEmpty()) {
+        tr.hide(visibleFragments.first())
+      }
+
+      if (addToBackStack) {
+        tr.addToBackStack(null)
+      }
+
+      tr.add(containerViewId, fragment)
+        .commit()
+    }
+
+    fun popBack(): Boolean {
+      if (fragmentManager.backStackEntryCount > 0) {
+        fragmentManager.popBackStack()
+        return true
+      }
+      return false
     }
   }
 
