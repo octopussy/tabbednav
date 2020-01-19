@@ -10,6 +10,8 @@ import android.widget.FrameLayout
 import androidx.annotation.IdRes
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
+import timber.log.Timber
+import java.util.*
 
 typealias FragmentBuilder = () -> Fragment
 
@@ -43,7 +45,7 @@ class NavigationManager(
       initialized = true
       select(firstStackName)
     } else {
-      entries.forEach { restoreStack(it) }
+      entries.forEach { restoreStack(it, savedInstanceState) }
       initialized = true
       val s = savedInstanceState.getString("selected") ?: firstStackName
       select(s)
@@ -75,6 +77,7 @@ class NavigationManager(
 
   fun onSaveInstanceState(outState: Bundle) {
     outState.putString("selected", selectedStackName)
+    stacks.values.forEach { it.onSaveInstanceState(outState) }
   }
 
   fun pushFragment(fragment: Fragment, addToBackStack: Boolean = true) {
@@ -106,56 +109,89 @@ class NavigationManager(
 
     stacks[entry.name] = Stack(
       containerFragment.childFragmentManager,
-      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder
+      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder, null
     )
   }
 
-  private fun restoreStack(entry: BuilderEntry) {
+  private fun restoreStack(
+    entry: BuilderEntry,
+    savedInstanceState: Bundle
+  ) {
     val containerFragment = fragmentManager.findFragmentByTag(entry.name)
       ?: throw IllegalStateException("Cannot restore fragment for '${entry.name}")
 
     stacks[entry.name] = Stack(
       containerFragment.childFragmentManager,
-      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder
+      R.id.stackFragmentContainer, entry.name, entry.topFragmentBuilder,
+      savedInstanceState
     )
   }
 
   class Stack(
-    val fragmentManager: FragmentManager,
+    private val fragmentManager: FragmentManager,
     @IdRes val containerViewId: Int,
     val containerFragmentTag: String,
-    val topFragmentBuilder: FragmentBuilder
+    val topFragmentBuilder: FragmentBuilder,
+    savedInstanceState: Bundle?
   ) {
 
+    private val tagStack = mutableListOf<String>()
+
     init {
-      pushFragment(topFragmentBuilder(), false)
+      if (savedInstanceState == null) {
+        pushFragment(topFragmentBuilder(), false)
+      } else {
+        val array = savedInstanceState.getStringArray("${containerFragmentTag}_tags") ?: arrayOf()
+        tagStack.addAll(array.toList())
+        fragmentManager.beginTransaction()
+          .apply {
+            // hide fragments except the top one
+            if (tagStack.size > 1) {
+              tagStack.subList(0, tagStack.size - 2)
+                .mapNotNull { fragmentManager.findFragmentByTag(it) }
+                .forEach { hide(it) }
+            }
+          }
+          .commitNow()
+
+        Timber.d("Stack '$topFragmentBuilder' restored with $tagStack")
+      }
+    }
+
+    fun onSaveInstanceState(outState: Bundle) {
+      outState.putStringArray("${containerFragmentTag}_tags", tagStack.toTypedArray())
     }
 
     fun pushFragment(fragment: Fragment, addToBackStack: Boolean) {
-      val visibleFragments = fragmentManager.fragments.filter { it.isVisible }
-      if (visibleFragments.size > 1) {
-        throw IllegalStateException("More than 1 visible fragments in '$containerFragmentTag'")
-      }
+      val tag = generateTag(fragment)
       val tr = fragmentManager.beginTransaction()
-      if (visibleFragments.isNotEmpty()) {
-        tr.hide(visibleFragments.first())
+      if (tagStack.isNotEmpty()) {
+        val visibleFragment = fragmentManager.findFragmentByTag(tagStack.last())
+        tr.hide(visibleFragment!!)
       }
 
       if (addToBackStack) {
         tr.addToBackStack(null)
       }
 
-      tr.add(containerViewId, fragment)
+      tr.add(containerViewId, fragment, tag)
         .commit()
+
+      tagStack.add(tag)
     }
 
     fun popBack(): Boolean {
       if (fragmentManager.backStackEntryCount > 0) {
         fragmentManager.popBackStack()
+        tagStack.removeAt(tagStack.size - 1)
         return true
       }
+
       return false
     }
+
+    private fun generateTag(fragment: Fragment): String =
+      "${fragment.javaClass.simpleName}_${UUID.randomUUID()}"
   }
 
   class ContainerFragment : Fragment() {
